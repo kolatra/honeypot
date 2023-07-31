@@ -6,33 +6,43 @@ use tokio::net::TcpListener;
 pub type Result<T> = anyhow::Result<T>;
 
 mod config;
+mod handler;
 
-struct GlobalData {
-    config: Config,
+pub struct GlobalData {
+    pub config: Config,
 }
 
-async fn run() -> Result<bool> {
+async fn run() -> Result<()> {
     let global = Arc::new(GlobalData {
         config: Config::read().await?,
     });
 
     let addr = format!("0.0.0.0:{}", global.config.port);
     let listener = TcpListener::bind(&addr).await?;
-    println!("Listening on {}", addr);
+    println!("[*] listening on {}", addr);
 
     let mut join_handles = vec![];
     while let Ok((incoming, _)) = listener.accept().await {
-        let jh = tokio::spawn(
-            async move { println!("Accepted connection from {}", incoming.peer_addr().unwrap()); }
+        println!(
+            "[+] incoming connection from {}",
+            incoming.peer_addr().unwrap()
         );
+        
+        let data_ptr = Arc::clone(&global);
+        let jh = tokio::spawn(async move {
+            if let Err(e) = handler::scare_away(data_ptr, incoming).await {
+                println!("[!] error: {}", e)
+            };
+        });
+
         join_handles.push(jh);
     }
 
     for jh in join_handles {
-        jh.await.unwrap();
+        jh.await?;
     }
 
-    Ok(true)
+    Ok(())
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -41,11 +51,10 @@ async fn main() {
 
     match result {
         Err(e) => {
-            println!("Error: {}", e);
+            println!("error: {}", e);
             process::exit(1);
         }
 
-        Ok(true) => process::exit(0),
-        Ok(false) => process::exit(1),
+        Ok(()) => process::exit(0),
     }
 }
