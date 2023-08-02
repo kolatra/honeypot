@@ -37,14 +37,8 @@ pub async fn scare_away(_state: Arc<GlobalData>, incoming: TcpStream) -> Result<
     webhook::log_mc_ping(incoming_addr, &handshake.hostname).await?;
 
     match handshake.intention {
-        ConnectionProtocol::Status => {
-            handle_status(Connection::from(conn)).await?;
-            Ok(())
-        }
-        ConnectionProtocol::Login => {
-            println!("[*] login connection, ignoring for now");
-            Ok(())
-        }
+        ConnectionProtocol::Status => handle_status(Connection::from(conn)).await,
+        ConnectionProtocol::Login => webhook::log_join(incoming_addr).await,
         _ => Err(anyhow!("[!] unexpected data")),
     }
 }
