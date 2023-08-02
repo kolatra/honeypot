@@ -7,6 +7,8 @@ pub type Result<T> = anyhow::Result<T>;
 
 mod config;
 mod handler;
+mod templates;
+mod webhook;
 
 pub struct GlobalData {
     pub config: Config,
@@ -27,7 +29,7 @@ async fn run() -> Result<()> {
             "[+] incoming connection from {}",
             incoming.peer_addr().unwrap()
         );
-        
+
         let data_ptr = Arc::clone(&global);
         let jh = tokio::spawn(async move {
             if let Err(e) = handler::scare_away(data_ptr, incoming).await {
