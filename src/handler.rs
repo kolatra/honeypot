@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, net::SocketAddr};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use azalea::protocol::{
     connect::Connection,
     packets::{
@@ -9,7 +9,7 @@ use azalea::protocol::{
             clientbound_pong_response_packet::ClientboundPongResponsePacket,
             ClientboundStatusPacket, ServerboundStatusPacket,
         },
-        ConnectionProtocol, login::{ServerboundLoginPacket, ClientboundLoginPacket},
+        ConnectionProtocol, login::{ServerboundLoginPacket, ClientboundLoginPacket}
     },
 };
 use tokio::net::TcpStream;
@@ -21,40 +21,36 @@ type ServerStatusConn = Connection<ServerboundStatusPacket, ClientboundStatusPac
 type ServerLoginConn = Connection<ServerboundLoginPacket, ClientboundLoginPacket>;
 
 pub async fn handle_conn(_state: Arc<GlobalData>, incoming: TcpStream) -> Result<()> {
-    let incoming_addr = incoming.peer_addr()?;
+    let peer = incoming.peer_addr()?;
     let mut conn: ServerHandshakeConn = Connection::wrap(incoming);
 
     // read the packet, if it's not a minecraft handshake, return early
     let Ok(ServerboundHandshakePacket::ClientIntention(handshake)) = conn.read().await else {
-        webhook::log_connection(incoming_addr).await?;
+        webhook::log_connection(peer).await?;
         return Ok(());
     };
 
     println!("[*] handshake: {:?}", handshake);
-    webhook::log_mc_ping(incoming_addr, &handshake.hostname).await?;
 
     match handshake.intention {
-        ConnectionProtocol::Status => entice(Connection::from(conn)).await,
-        ConnectionProtocol::Login => {
-            webhook::log_join(incoming_addr).await?;
-            scare_away(Connection::from(conn)).await
-        },
+        ConnectionProtocol::Status => entice(Connection::from(conn), peer, &handshake.hostname).await,
+        ConnectionProtocol::Login => scare_away(Connection::from(conn), peer).await,
         _ => Err(anyhow!("[!] unexpected data")),
     }
 }
 
-async fn entice(mut conn: ServerStatusConn) -> Result<()> {
-    let _ = match conn.read().await? {
-        ServerboundStatusPacket::StatusRequest(request) => request,
-        _ => return Err(anyhow!("[!] expected status request")),
+async fn entice(mut conn: ServerStatusConn, peer: SocketAddr, target: &str) -> Result<()> {
+    let ServerboundStatusPacket::StatusRequest(_) = conn.read().await? else {
+        bail!("[!] expected status request")
     };
 
+    webhook::log_mc_ping(peer, target).await?;
+ 
     let status = pick_for_me();
     conn.write(status.get()).await?;
 
-    let ping_request = match conn.read().await? {
-        ServerboundStatusPacket::PingRequest(ping_request) => ping_request,
-        _ => return Err(anyhow!("[!] expected ping request")),
+    let ServerboundStatusPacket::PingRequest(ping_request) = conn.read().await? else {
+        bail!("[!] expected ping request")
     };
 
     let ping_response = ClientboundPongResponsePacket {
@@ -65,13 +61,16 @@ async fn entice(mut conn: ServerStatusConn) -> Result<()> {
     Ok(())
 }
 
-async fn scare_away(mut conn: ServerLoginConn) -> Result<()> {
-    let _ = match conn.read().await? {
-        ServerboundLoginPacket::Hello(hello) => hello,
-        _ => return Err(anyhow!("[!] expected login start")),
+async fn scare_away(mut conn: ServerLoginConn, peer: SocketAddr) -> Result<()> {
+    let ServerboundLoginPacket::Hello(_) = conn.read().await? else {
+        bail!("[!] expected login start")
     };
 
-    let dc = disconnect("You found a honeypot server designed to find scanners, please remove this IP from your list.");
+    webhook::log_join(peer).await?;
+    
+    // TODO: send Login Success and Login Play before disconnecting
+
+    let dc = disconnect("Internal server error, please try again later.");
     conn.write(dc.get()).await?;
 
     Ok(())

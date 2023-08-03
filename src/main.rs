@@ -1,4 +1,4 @@
-use std::{process, sync::Arc};
+use std::sync::Arc;
 
 use config::Config;
 use tokio::net::TcpListener;
@@ -14,7 +14,8 @@ pub struct GlobalData {
     pub config: Config,
 }
 
-async fn run() -> Result<()> {
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<()> {
     let global = Arc::new(GlobalData {
         config: Config::read().await?,
     });
@@ -45,18 +46,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
-    let result = run().await;
-
-    match result {
-        Err(e) => {
-            println!("error: {}", e);
-            process::exit(1);
-        }
-
-        Ok(()) => process::exit(0),
-    }
 }
