@@ -1,12 +1,12 @@
-use azalea::protocol::packets::game::clientbound_disconnect_packet::ClientboundDisconnectPacket;
+use azalea::protocol::packets::login::clientbound_login_disconnect_packet::ClientboundLoginDisconnectPacket;
 use azalea::protocol::packets::status::clientbound_status_response_packet::ClientboundStatusResponsePacket as Status;
 use azalea::protocol::packets::status::clientbound_status_response_packet::{
     Players, SamplePlayer, Version,
 };
 use azalea_chat::{text_component::TextComponent, FormattedText};
 
-pub fn disconnect(reason: &str) -> ClientboundDisconnectPacket {
-    ClientboundDisconnectPacket {
+pub fn disconnect(reason: &str) -> ClientboundLoginDisconnectPacket {
+    ClientboundLoginDisconnectPacket {
         reason: FormattedText::Text(TextComponent::new(reason.to_string())),
     }
 }

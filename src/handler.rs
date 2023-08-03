@@ -4,13 +4,12 @@ use anyhow::anyhow;
 use azalea::protocol::{
     connect::Connection,
     packets::{
-        game::{ClientboundGamePacket, ServerboundGamePacket},
         handshake::{ClientboundHandshakePacket, ServerboundHandshakePacket},
         status::{
             clientbound_pong_response_packet::ClientboundPongResponsePacket,
             ClientboundStatusPacket, ServerboundStatusPacket,
         },
-        ConnectionProtocol,
+        ConnectionProtocol, login::{ServerboundLoginPacket, ClientboundLoginPacket},
     },
 };
 use tokio::net::TcpStream;
@@ -19,11 +18,9 @@ use crate::{templates::*, webhook, GlobalData, Result};
 
 type ServerHandshakeConn = Connection<ServerboundHandshakePacket, ClientboundHandshakePacket>;
 type ServerStatusConn = Connection<ServerboundStatusPacket, ClientboundStatusPacket>;
+type ServerLoginConn = Connection<ServerboundLoginPacket, ClientboundLoginPacket>;
 
-#[allow(unused)]
-type ServerGameConn = Connection<ServerboundGamePacket, ClientboundGamePacket>;
-
-pub async fn scare_away(_state: Arc<GlobalData>, incoming: TcpStream) -> Result<()> {
+pub async fn handle_conn(_state: Arc<GlobalData>, incoming: TcpStream) -> Result<()> {
     let incoming_addr = incoming.peer_addr()?;
     let mut conn: ServerHandshakeConn = Connection::wrap(incoming);
 
@@ -37,13 +34,16 @@ pub async fn scare_away(_state: Arc<GlobalData>, incoming: TcpStream) -> Result<
     webhook::log_mc_ping(incoming_addr, &handshake.hostname).await?;
 
     match handshake.intention {
-        ConnectionProtocol::Status => handle_status(Connection::from(conn)).await,
-        ConnectionProtocol::Login => webhook::log_join(incoming_addr).await,
+        ConnectionProtocol::Status => entice(Connection::from(conn)).await,
+        ConnectionProtocol::Login => {
+            webhook::log_join(incoming_addr).await?;
+            scare_away(Connection::from(conn)).await
+        },
         _ => Err(anyhow!("[!] unexpected data")),
     }
 }
 
-async fn handle_status(mut conn: ServerStatusConn) -> Result<()> {
+async fn entice(mut conn: ServerStatusConn) -> Result<()> {
     let _ = match conn.read().await? {
         ServerboundStatusPacket::StatusRequest(request) => request,
         _ => return Err(anyhow!("[!] expected status request")),
@@ -60,8 +60,19 @@ async fn handle_status(mut conn: ServerStatusConn) -> Result<()> {
     let ping_response = ClientboundPongResponsePacket {
         time: ping_request.time,
     };
-
     conn.write(ping_response.get()).await?;
+
+    Ok(())
+}
+
+async fn scare_away(mut conn: ServerLoginConn) -> Result<()> {
+    let _ = match conn.read().await? {
+        ServerboundLoginPacket::Hello(hello) => hello,
+        _ => return Err(anyhow!("[!] expected login start")),
+    };
+
+    let dc = disconnect("You found a honeypot server designed to find scanners, please remove this IP from your list.");
+    conn.write(dc.get()).await?;
 
     Ok(())
 }

@@ -32,7 +32,7 @@ async fn run() -> Result<()> {
 
         let data_ptr = Arc::clone(&global);
         let jh = tokio::spawn(async move {
-            if let Err(e) = handler::scare_away(data_ptr, incoming).await {
+            if let Err(e) = handler::handle_conn(data_ptr, incoming).await {
                 println!("[!] error: {}", e)
             };
         });
