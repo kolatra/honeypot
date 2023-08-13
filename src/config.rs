@@ -1,19 +1,20 @@
+use dotenvy::var;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub port: u16,
-    pub db_user: String,
-    pub db_password: String,
+    pub db_url: String,
 }
 
 impl Config {
-    pub async fn read() -> crate::Result<Config> {
+    pub fn new() -> anyhow::Result<Config> {
         let config = Config {
-            port: std::env::var("PORT")?.parse()?,
-            db_user: std::env::var("DB_USER")?,
-            db_password: std::env::var("DB_PASSWORD")?,
+            port: var("PORT")?.parse()?,
+            db_url: var("DATABASE_URL")?,
         };
+
+        dbg!(&config);
 
         Ok(config)
     }
