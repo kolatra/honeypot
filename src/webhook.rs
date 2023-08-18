@@ -1,19 +1,24 @@
-use std::net::{SocketAddr, IpAddr};
+use std::net::IpAddr;
 
 use webhook::client::WebhookClient;
 
-pub async fn log_mc_ping(address: SocketAddr, target: &str) -> anyhow::Result<()> {
+pub async fn log_mc_ping(address: &str, target: &str) -> anyhow::Result<()> {
     let msg = format!("minecraft ping from {address} to {target}");
     send(&msg).await
 }
 
-pub async fn log_connection(address: SocketAddr) -> anyhow::Result<()> {
+pub async fn log_connection(address: &str) -> anyhow::Result<()> {
     let msg = format!("non-minecraft connection from {address}");
     send(&msg).await
 }
 
 pub async fn log_join(address: IpAddr, user: &str) -> anyhow::Result<()> {
     let msg = format!("({address}) {user} joined the server");
+    send(&msg).await
+}
+
+pub async fn log_leave(address: IpAddr, user: &str) -> anyhow::Result<()> {
+    let msg = format!("({address}) {user} disconnected");
     send(&msg).await
 }
 

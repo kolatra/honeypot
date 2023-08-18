@@ -1,6 +1,6 @@
 use std::env::var;
 
-use diesel::{PgConnection, Connection, SelectableHelper, RunQueryDsl, result::Error as DbError, ExpressionMethods};
+use diesel::{PgConnection, Connection, SelectableHelper, RunQueryDsl, result::Error as DbError, ExpressionMethods, QueryDsl};
 
 use crate::{models::Host, schema::stats::dsl::*, models::NewEntry};
 
@@ -15,53 +15,55 @@ pub enum Update {
     Join,
 }
 
-pub async fn new_entry(
+#[allow(unused)]
+pub async fn add_or_update(
     conn: &mut PgConnection, 
     addr: &str, 
     update_type: Update
 ) -> anyhow::Result<Host, DbError> {
-    diesel::insert_into(stats)
-        .values(&NewEntry {
-            ip_address: addr,
-            ping_count: 0,
-            join_count: 0,
-        })
-        .on_conflict(ip_address)
-        .do_update()
-        .set((
-            // O_O
-            ping_count.eq(ping_count + ( if update_type == Update::Ping { 1 } else { 0 } )),
-            join_count.eq(join_count + ( if update_type == Update::Join { 1 } else { 0 } )),
-        ))
-        .returning(Host::as_returning())
-        .get_result(conn)
-}
+    let pc = if update_type == Update::Ping { 1 } else { 0 }; 
+    let jc = if update_type == Update::Join { 1 } else { 0 };
 
-async fn unfinished_stuff() {
-    use diesel::QueryDsl;
-    use crate::schema::stats::dsl::*;
+    let query = stats
+        .filter(ip_address.eq(addr))
+        .first::<Host>(conn);
 
-    let res = connect().await;
-    dbg!(&res.is_ok());
+    let existing_addr = match query {
+        Ok(a) => Some(a),
+        Err(e) => {
+            if e == DbError::NotFound {
+                None
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
-    let mut conn = res.unwrap();
+    match existing_addr {
+        Some(addr) => {
+            diesel::update(stats)
+                .filter(ip_address.eq(addr.ip_address))
+                .set((
+                    ping_count.eq(addr.ping_count + pc),
+                    join_count.eq(addr.join_count + jc),
+                    updated_at.eq(chrono::Local::now().naive_local()),
+                ))
+                .returning(Host::as_returning())
+                .get_result(conn)
+        },
 
-    let res = diesel::insert_into(stats)
-        .values(&NewEntry {
-            ip_address: "127.0.0.1",
-            ping_count: 0,
-            join_count: 0,
-        })
-        .returning(Host::as_returning())
-        .get_result(&mut conn);
+        None => {
+            let new_entry = NewEntry {
+                id: uuid::Uuid::new_v4(),
+                ip_address: addr,
+                ping_count: pc,
+                join_count: jc,
+            };
 
-    dbg!(res.is_ok());
-
-    let res = stats
-        .filter(ip_address.eq("127.0.0.1"))
-        .first::<crate::models::Host>(&mut conn);
-    
-    dbg!(res.is_ok());
-
-    todo!()
+            diesel::insert_into(stats)
+                .values(&new_entry)
+                .returning(Host::as_returning())
+                .get_result(conn)
+        }
+    }
 }

@@ -1,11 +1,10 @@
-#![allow(
-    dead_code, // shut up clippy
-)]
-
+#![allow(dead_code)]
+#![feature(async_closure)]
 use std::{net::SocketAddr, sync::Arc};
 use config::Config;
+use diesel::PgConnection;
 use dotenvy::dotenv;
-use log::debug;
+use log::{info, debug, error};
 use valence::{
     network::{async_trait, CleanupFn, HandshakeData, ServerListPing},
     prelude::*,
@@ -18,11 +17,10 @@ mod webhook;
 mod db;
 mod models;
 mod schema;
-mod server;
 
 pub struct GlobalData {
     pub config: Config,
-    //pub db: PgConnection,
+    pub db: PgConnection,
 }
 
 #[tokio::main]
@@ -31,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
 
     let global = Arc::new(GlobalData {
         config: Config::new()?,
-        //db: db::connect().await?
+        db: db::connect().await?
     });
 
     let address = format!("0.0.0.0:{}", global.config.port).parse()?;
@@ -47,8 +45,8 @@ async fn main() -> anyhow::Result<()> {
     App::new()
         .insert_resource(settings)
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, server::setup)
-        .add_systems(Update, server::init_clients)
+        .add_systems(Startup, setup)
+        .add_systems(Update, init_clients)
         .run();
 
     Ok(())
@@ -64,7 +62,18 @@ impl NetworkCallbacks for ALittleLying {
         remote_addr: SocketAddr,
         handshake_data: &HandshakeData,
     ) -> ServerListPing {
-        webhook::log_mc_ping(remote_addr, &handshake_data.server_address)
+        dbg!(handshake_data);
+
+        let mut conn = db::connect().await.expect("Could not connect to DB");
+        let addr_port = remote_addr.to_string();
+        let addr = &addr_port[..addr_port.len() - 6];
+
+        match db::add_or_update(&mut conn, addr, db::Update::Ping).await {
+            Ok(a) => info!("{:?}", a),
+            Err(e) => error!("db error: {e}")
+        }
+
+        webhook::log_mc_ping(&addr_port, &handshake_data.server_address)
             .await
             .ok();
 
@@ -78,10 +87,89 @@ impl NetworkCallbacks for ALittleLying {
     ) -> Result<CleanupFn, Text> {
         dbg!(info);
 
+        let mut conn = db::connect().await.expect("Could not connect to DB");
+        let addr = info.ip.to_string();
+
+        match db::add_or_update(&mut conn, &addr, db::Update::Join).await {
+            Ok(a) => info!("{:?}", a),
+            Err(e) => error!("{e}")
+        }
+
         webhook::log_join(info.ip, &info.username)
             .await
             .ok();
 
-        Ok(Box::new(move || {}))
+        // Create a new async task with owned data for when the client disconnects
+        let ip = info.ip;
+        let user = info.username.clone();
+        Ok(Box::new(move || {
+            tokio::task::spawn(async move {
+                webhook::log_leave(ip, &user)
+                    .await
+                    .ok();
+            });
+        }))
+    }
+}
+
+const SPAWN_Y: i32 = 0;
+
+pub fn setup(
+    mut commands: Commands,
+    dimensions: Res<DimensionTypeRegistry>,
+    mut biomes: ResMut<BiomeRegistry>,
+    server: Res<Server>,
+) {
+    let size = 5;
+
+    biomes.insert(ident!("plains"), Biome::default());
+
+    let mut layer = LayerBundle::new(ident!("overworld"), &dimensions, &biomes, &server);
+
+    for z in -size..size {
+        for x in -size..size {
+            layer.chunk.insert_chunk([x, z], UnloadedChunk::new());
+        }
+    }
+
+    for x in -size * 16..size * 16 {
+        for z in -size * 16..size * 16 {
+            layer
+                .chunk
+                .set_block([x, SPAWN_Y, z], BlockState::GRASS_BLOCK);
+        }
+    }
+
+    commands.spawn(layer);
+}
+
+pub fn init_clients(
+    mut clients: Query<
+        (
+            &mut EntityLayerId,
+            &mut VisibleChunkLayer,
+            &mut VisibleEntityLayers,
+            &mut Position,
+            &mut GameMode,
+        ),
+        Added<Client>,
+    >,
+    layers: Query<Entity, (With<ChunkLayer>, With<EntityLayer>)>,
+) {
+    for (
+        mut layer_id,
+        mut visible_chunk_layer,
+        mut visible_entity_layers,
+        mut pos,
+        mut game_mode,
+    ) in &mut clients
+    {
+        let layer = layers.single();
+
+        layer_id.0 = layer;
+        visible_chunk_layer.0 = layer;
+        visible_entity_layers.0.insert(layer);
+        pos.set([0.0, SPAWN_Y as f64 + 1.0, 0.0]);
+        *game_mode = GameMode::Adventure;
     }
 }

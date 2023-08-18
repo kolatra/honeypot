@@ -1,18 +1,22 @@
 use diesel::{Queryable, Selectable, Insertable};
+use uuid::Uuid;
 
-#[derive(Queryable, Selectable)]
+#[derive(Debug, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::stats)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Host {
-    pub id: i32,
+    pub id: Uuid,
     pub ip_address: String,
     pub ping_count: i32,
     pub join_count: i32,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
 }
 
-#[derive(Insertable)]
+#[derive(Debug, Insertable)]
 #[diesel(table_name = crate::schema::stats)]
 pub struct NewEntry<'a> {
+    pub id: Uuid,
     pub ip_address: &'a str,
     pub ping_count: i32,
     pub join_count: i32,
