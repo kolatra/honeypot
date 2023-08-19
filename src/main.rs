@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 #![feature(async_closure)]
-use std::{net::SocketAddr, sync::Arc};
 use config::Config;
 use diesel::PgConnection;
 use dotenvy::dotenv;
-use log::{info, debug, error};
+use log::{debug, error, info};
+use std::{net::SocketAddr, sync::Arc};
 use valence::{
     network::{async_trait, CleanupFn, HandshakeData, ServerListPing},
     prelude::*,
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
 
     let global = Arc::new(GlobalData {
         config: Config::new()?,
-        db: db::connect().await?
+        db: db::connect().await?,
     });
 
     let address = format!("0.0.0.0:{}", global.config.port).parse()?;
@@ -70,12 +70,10 @@ impl NetworkCallbacks for ALittleLying {
 
         match db::add_or_update(&mut conn, addr, db::Update::Ping).await {
             Ok(a) => info!("{:?}", a),
-            Err(e) => error!("db error: {e}")
+            Err(e) => error!("db error: {e}"),
         }
 
-        webhook::log_mc_ping(&addr_port, &handshake_data.server_address)
-            .await
-            .ok();
+        webhook::log_mc_ping(&addr_port, &handshake_data.server_address);
 
         response::base()
     }
@@ -88,26 +86,18 @@ impl NetworkCallbacks for ALittleLying {
         dbg!(info);
 
         let mut conn = db::connect().await.expect("Could not connect to DB");
-        let addr = info.ip.to_string();
+        let addr = info.ip;
 
-        match db::add_or_update(&mut conn, &addr, db::Update::Join).await {
+        match db::add_or_update(&mut conn, &addr.to_string(), db::Update::Join).await {
             Ok(a) => info!("{:?}", a),
-            Err(e) => error!("{e}")
+            Err(e) => error!("{e}"),
         }
 
-        webhook::log_join(info.ip, &info.username)
-            .await
-            .ok();
+        webhook::log_join(info.ip, &info.username);
 
-        // Create a new async task with owned data for when the client disconnects
-        let ip = info.ip;
         let user = info.username.clone();
         Ok(Box::new(move || {
-            tokio::task::spawn(async move {
-                webhook::log_leave(ip, &user)
-                    .await
-                    .ok();
-            });
+            webhook::log_leave(addr, &user);
         }))
     }
 }

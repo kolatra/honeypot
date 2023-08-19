@@ -1,4 +1,4 @@
-use diesel::{Queryable, Selectable, Insertable};
+use diesel::{Insertable, Queryable, Selectable};
 use uuid::Uuid;
 
 #[derive(Debug, Queryable, Selectable)]
