@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use valence::{
     network::{
         PlayerSampleEntry,
@@ -11,7 +12,7 @@ static MC_VERSION: &str = "1.20.1";
 pub fn status_response(s: Option<&str>, players: Option<Vec<PlayerSampleEntry>>) -> ServerListPing {
     let motd = s.unwrap_or("A Minecraft Server");
     let motd = motd.to_string();
-    let player_sample = players.unwrap_or(Vec::new());
+    let player_sample = players.unwrap_or_default();
 
     Respond {
         online_players: player_sample.len() as i32,
@@ -34,7 +35,7 @@ pub fn base<'a>() -> ServerListPing<'a> {
 }
 
 pub fn anonymous<'a>(online: i32) -> ServerListPing<'a> {
-    let players = (0..=online)
+    let players = (0..online)
         .map(|_| PlayerSampleEntry {
             name: "Anonymous Player".to_string(),
             id: "00000000-0000-0000-0000-000000000000".parse().unwrap(),
