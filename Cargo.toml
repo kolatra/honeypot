@@ -10,6 +10,7 @@ anyhow = "1.0.72"
 chrono = "0.4.26"
 clap = { version = "4.3.19", features = ["derive"] }
 diesel = { version = "2.1.0", features = ["postgres", "uuid", "chrono"] }
+diesel_migrations = "2.1.0"
 dotenvy = "0.15.7"
 fastrand = "2.0.0"
 futures = "0.3.28"

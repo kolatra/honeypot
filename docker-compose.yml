@@ -1,9 +1,0 @@
-version: '3'
-
-services:
-   honeypot:
-     build: 
-       context: .
-       dockerfile: Dockerfile
-     image: honeypot:latest
-
