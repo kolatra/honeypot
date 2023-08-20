@@ -62,7 +62,6 @@ impl NetworkCallbacks for ALittleLying {
         remote_addr: SocketAddr,
         handshake_data: &HandshakeData,
     ) -> ServerListPing {
-        dbg!(handshake_data);
 
         let mut conn = db::connect().await.expect("Could not connect to DB");
         let addr_port = remote_addr.to_string();
@@ -83,7 +82,6 @@ impl NetworkCallbacks for ALittleLying {
         _shared: &SharedNetworkState,
         info: &NewClientInfo,
     ) -> Result<CleanupFn, Text> {
-        dbg!(info);
 
         let mut conn = db::connect().await.expect("Could not connect to DB");
         let addr = info.ip;

@@ -14,8 +14,6 @@ impl Config {
             db_url: var("DATABASE_URL")?,
         };
 
-        dbg!(&config);
-
         Ok(config)
     }
 }
