@@ -1,15 +1,26 @@
 use std::env::var;
 
+use anyhow::bail as nope;
 use diesel::{
     result::Error as DbError, Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
     SelectableHelper,
 };
+use diesel_migrations::{MigrationHarness, EmbeddedMigrations, embed_migrations};
 
 use crate::{models::Host, models::NewEntry, schema::stats::dsl::*};
 
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+
 pub async fn connect() -> anyhow::Result<PgConnection> {
     let url = var("DATABASE_URL")?;
-    Ok(PgConnection::establish(&url)?)
+    let mut conn = PgConnection::establish(&url)?;
+
+    match conn.run_pending_migrations(MIGRATIONS) {
+        Ok(_) => println!("Migrations run successfully"),
+        Err(e) => nope!("Error running migrations: {}", e)
+    };
+
+    Ok(conn)
 }
 
 #[derive(PartialEq)]
