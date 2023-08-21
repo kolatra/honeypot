@@ -7,3 +7,15 @@ CREATE TABLE stats (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE players(
+    uuid UUID NOT NULL PRIMARY KEY,
+    server_uuid UUID NOT NULL,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_player
+        FOREIGN KEY (server_uuid)
+        REFERENCES stats (id)
+        ON DELETE CASCADE
+);

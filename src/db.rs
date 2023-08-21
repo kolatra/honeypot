@@ -1,58 +1,40 @@
-use std::env::var;
-
-use anyhow::bail as nope;
 use diesel::{
     result::Error as DbError, Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
     SelectableHelper,
 };
-use diesel_migrations::{MigrationHarness, EmbeddedMigrations, embed_migrations};
+use uuid::Uuid;
 
-use crate::{models::Host, models::NewEntry, schema::stats::dsl::*};
+use crate::{
+    models::Host,
+    models::{NewEntry, NewPlayer},
+    schema::stats::dsl::*,
+};
 
-const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
-
-pub async fn connect() -> anyhow::Result<PgConnection> {
-    let url = var("DATABASE_URL")?;
-    let mut conn = PgConnection::establish(&url)?;
-
-    match conn.run_pending_migrations(MIGRATIONS) {
-        Ok(_) => println!("Migrations run successfully"),
-        Err(e) => nope!("Error running migrations: {}", e)
-    };
-
+pub fn connect() -> anyhow::Result<PgConnection> {
+    let url = &crate::CONFIG.db_url;
+    let conn = PgConnection::establish(url)?;
     Ok(conn)
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum Update {
     Ping,
     Join,
 }
 
 #[allow(unused)]
-pub async fn add_or_update(
+pub fn add_or_update(
     conn: &mut PgConnection,
     addr: &str,
     update_type: Update,
 ) -> anyhow::Result<Host, DbError> {
-    let pc = if update_type == Update::Ping { 1 } else { 0 };
-    let jc = if update_type == Update::Join { 1 } else { 0 };
+    let pc = i32::from(update_type == Update::Ping);
+    let jc = i32::from(update_type == Update::Join);
 
     let query = stats.filter(ip_address.eq(addr)).first::<Host>(conn);
 
-    let existing_addr = match query {
-        Ok(a) => Some(a),
-        Err(e) => {
-            if e == DbError::NotFound {
-                None
-            } else {
-                return Err(e);
-            }
-        }
-    };
-
-    match existing_addr {
-        Some(addr) => diesel::update(stats)
+    match query {
+        Ok(addr) => diesel::update(stats)
             .filter(ip_address.eq(addr.ip_address))
             .set((
                 ping_count.eq(addr.ping_count + pc),
@@ -62,7 +44,11 @@ pub async fn add_or_update(
             .returning(Host::as_returning())
             .get_result(conn),
 
-        None => {
+        Err(e) => {
+            if e != DbError::NotFound {
+                return Err(e);
+            }
+
             let new_entry = NewEntry {
                 id: uuid::Uuid::new_v4(),
                 ip_address: addr,
@@ -76,4 +62,44 @@ pub async fn add_or_update(
                 .get_result(conn)
         }
     }
+}
+
+pub fn add_player(
+    conn: &mut PgConnection,
+    addr: &str,
+    name: &str,
+    uuid: Uuid,
+) -> anyhow::Result<()> {
+    let backup = NewEntry {
+        id: uuid::Uuid::new_v4(),
+        ip_address: addr,
+        ping_count: 0,
+        join_count: 1,
+    };
+
+    let server = stats
+        .filter(ip_address.eq(addr))
+        .first::<Host>(conn)
+        .unwrap_or_else(|_| {
+            diesel::insert_into(stats)
+                .values(&backup)
+                .returning(Host::as_returning())
+                .get_result(conn)
+                .unwrap()
+        });
+
+    let player = NewPlayer {
+        uuid,
+        server_uuid: server.id,
+        name,
+    };
+
+    diesel::insert_into(crate::schema::players::table)
+        .values(&player)
+        .on_conflict(crate::schema::players::uuid)
+        .do_update()
+        .set(crate::schema::players::updated_at.eq(chrono::Local::now().naive_local()))
+        .execute(conn)?;
+
+    Ok(())
 }

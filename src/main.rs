@@ -1,10 +1,10 @@
-#![allow(dead_code)]
 #![feature(async_closure)]
-use config::Config;
-use diesel::PgConnection;
+use anyhow::bail as nope;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenvy::dotenv;
-use log::{debug, error, info};
-use std::{net::SocketAddr, sync::Arc};
+use log::{error, info, debug};
+use once_cell::sync::Lazy;
+use std::net::SocketAddr;
 use valence::{
     network::{async_trait, CleanupFn, HandshakeData, ServerListPing},
     prelude::*,
@@ -17,23 +17,24 @@ mod webhook;
 mod db;
 mod models;
 mod schema;
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
-pub struct GlobalData {
-    pub config: Config,
-    pub db: PgConnection,
-}
+use config::Config;
+pub static CONFIG: Lazy<Config> = Lazy::new(|| Config::new().expect("Could not load config"));
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
+    {
+        let mut conn = db::connect().expect("Could not connect to DB");
+        match conn.run_pending_migrations(MIGRATIONS) {
+            Ok(_) => println!("Migrations run successfully"),
+            Err(e) => nope!("Error running migrations: {}", e),
+        };
+    }
 
-    let global = Arc::new(GlobalData {
-        config: Config::new()?,
-        db: db::connect().await?,
-    });
-
-    let address = format!("0.0.0.0:{}", global.config.port).parse()?;
-    debug!("Listening on {}", address);
+    let address = format!("0.0.0.0:{}", CONFIG.port).parse()?;
+    println!("Listening on {}", address); // log doesn't work here and idk why
 
     let settings = NetworkSettings {
         connection_mode: ConnectionMode::Offline,
@@ -52,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+// TODO! setup a way to modify the responses, such as env variables
 struct ALittleLying;
 
 #[async_trait]
@@ -62,19 +64,18 @@ impl NetworkCallbacks for ALittleLying {
         remote_addr: SocketAddr,
         handshake_data: &HandshakeData,
     ) -> ServerListPing {
-
-        let mut conn = db::connect().await.expect("Could not connect to DB");
+        let mut conn = db::connect().expect("Could not connect to DB");
         let addr_port = remote_addr.to_string();
         let addr = &addr_port[..addr_port.len() - 6];
 
-        match db::add_or_update(&mut conn, addr, db::Update::Ping).await {
-            Ok(a) => info!("{:?}", a),
+        match db::add_or_update(&mut conn, addr, db::Update::Ping) {
+            Ok(a) => debug!("{:?}", a),
             Err(e) => error!("db error: {e}"),
         }
 
         webhook::log_mc_ping(&addr_port, &handshake_data.server_address);
 
-        response::base()
+        response::anonymous(5)
     }
 
     async fn login(
@@ -82,12 +83,16 @@ impl NetworkCallbacks for ALittleLying {
         _shared: &SharedNetworkState,
         info: &NewClientInfo,
     ) -> Result<CleanupFn, Text> {
-
-        let mut conn = db::connect().await.expect("Could not connect to DB");
+        let mut conn = db::connect().expect("Could not connect to DB");
         let addr = info.ip;
 
-        match db::add_or_update(&mut conn, &addr.to_string(), db::Update::Join).await {
-            Ok(a) => info!("{:?}", a),
+        match db::add_or_update(&mut conn, &addr.to_string(), db::Update::Join) {
+            Ok(a) => debug!("{:?}", a),
+            Err(e) => error!("{e}"),
+        }
+
+        match db::add_player(&mut conn, &addr.to_string(), &info.username, info.uuid) {
+            Ok(_) => debug!("Added player to DB"),
             Err(e) => error!("{e}"),
         }
 

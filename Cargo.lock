@@ -1371,6 +1371,7 @@ dependencies = [
  "fastrand 2.0.0",
  "futures",
  "log",
+ "once_cell",
  "rand",
  "serde",
  "serde_derive",

@@ -1,7 +1,7 @@
 build:
     docker build -t ghcr.io/kolatra/honeypot .
 
-push:
+push: build
     docker push ghcr.io/kolatra/honeypot
 
 db-init:
