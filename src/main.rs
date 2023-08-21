@@ -2,7 +2,7 @@
 use anyhow::bail as nope;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenvy::dotenv;
-use log::{error, info, debug};
+use log::{error, debug};
 use once_cell::sync::Lazy;
 use std::net::SocketAddr;
 use valence::{
