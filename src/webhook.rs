@@ -3,14 +3,23 @@ use std::net::IpAddr;
 use webhook::client::WebhookClient;
 
 pub fn log_mc_ping(address: &str, target: &str) {
+    if target.starts_with("192.168") {
+        return;
+    }
+
     let msg = format!("ping: {} with target {target}", ip_info(address));
     send(msg);
 }
 
 pub fn log_join(address: IpAddr, user: &str) {
+    let addr = address.to_string();
+    if addr.starts_with("192.168") {
+        return;
+    }
+
     let msg = format!(
         "({}) {user} joined the server",
-        ip_info(&address.to_string())
+        ip_info(&addr)
     );
     send(msg);
 }
