@@ -50,14 +50,14 @@ pub fn add_or_update(
             }
 
             let new_entry = NewEntry {
-                id: uuid::Uuid::new_v4(),
+                id: Uuid::new_v4(),
                 ip_address: addr,
                 ping_count: pc,
                 join_count: jc,
             };
 
             diesel::insert_into(stats)
-                .values(&new_entry)
+                .values(new_entry)
                 .returning(Host::as_returning())
                 .get_result(conn)
         }

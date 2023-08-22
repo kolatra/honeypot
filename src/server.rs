@@ -29,7 +29,7 @@ impl NetworkCallbacks for ALittleLying {
 
         webhook::log_mc_ping(&addr_port, &handshake_data.server_address);
 
-        response::dream()
+        response::base()
     }
 
     async fn login(
@@ -38,9 +38,9 @@ impl NetworkCallbacks for ALittleLying {
         info: &NewClientInfo,
     ) -> Result<CleanupFn, Text> {
         let mut conn = db::connect().expect("Could not connect to DB");
-        let addr = info.ip;
+        let addr = info.ip.to_string();
 
-        match db::add_or_update(&mut conn, &addr.to_string(), db::Update::Join) {
+        match db::add_or_update(&mut conn, &addr, db::Update::Join) {
             Ok(a) => debug!("{:?}", a),
             Err(e) => error!("{e}"),
         }
@@ -50,11 +50,11 @@ impl NetworkCallbacks for ALittleLying {
             Err(e) => error!("{e}"),
         }
 
-        webhook::log_join(info.ip, &info.username);
+        webhook::log_join(&addr, &info.username);
 
         let user = info.username.clone();
         Ok(Box::new(move || {
-            webhook::log_leave(addr, &user);
+            webhook::log_leave(&addr, &user);
         }))
     }
 }
